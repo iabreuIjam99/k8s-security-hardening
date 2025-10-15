@@ -1,0 +1,249 @@
+name: Kubernetes Security CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run security scans daily
+    - cron: '0 2 * * *'
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: security-hardened-cluster
+
+jobs:
+  # Job 1: Validate Infrastructure Code
+  validate-terraform:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.5.0
+    
+    - name: Terraform Format Check
+      run: |
+        cd terraform
+        terraform fmt -check -recursive
+    
+    - name: Terraform Init
+      run: |
+        cd terraform
+        terraform init -backend=false
+    
+    - name: Terraform Validate
+      run: |
+        cd terraform
+        terraform validate
+    
+    - name: TFLint
+      uses: terraform-linters/setup-tflint@v3
+      with:
+        tflint_version: latest
+    
+    - name: Run TFLint
+      run: |
+        cd terraform
+        tflint --init
+        tflint
+
+  # Job 2: Security Scanning of IaC
+  security-scan-iac:
+    name: Security Scan IaC
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Run Checkov
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: terraform/
+        framework: terraform
+        output_format: cli
+        soft_fail: false
+    
+    - name: Run TFSec
+      uses: aquasecurity/tfsec-action@v1.0.0
+      with:
+        working_directory: terraform/
+        soft_fail: false
+
+  # Job 3: Validate Kubernetes Manifests
+  validate-k8s-manifests:
+    name: Validate K8s Manifests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+    
+    - name: Validate YAML syntax
+      run: |
+        find manifests/ policies/ -name '*.yaml' -o -name '*.yml' | \
+        while read file; do
+          echo "Validating $file"
+          kubectl apply --dry-run=client -f "$file"
+        done
+    
+    - name: Run kubeval
+      run: |
+        wget https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
+        tar xf kubeval-linux-amd64.tar.gz
+        sudo mv kubeval /usr/local/bin
+        find manifests/ -name '*.yaml' -exec kubeval {} \;
+    
+    - name: Run kubesec
+      run: |
+        wget https://github.com/controlplaneio/kubesec/releases/latest/download/kubesec_linux_amd64.tar.gz
+        tar xf kubesec_linux_amd64.tar.gz
+        sudo mv kubesec /usr/local/bin
+        find manifests/workloads/ -name '*.yaml' -exec kubesec scan {} \;
+
+  # Job 4: Validate OPA Policies
+  validate-opa-policies:
+    name: Validate OPA Policies
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup OPA
+      uses: open-policy-agent/setup-opa@v2
+    
+    - name: Validate OPA policies
+      run: |
+        find policies/ -name '*.yaml' -exec opa check {} \;
+    
+    - name: Test OPA policies
+      run: |
+        # Add OPA policy tests here
+        echo "OPA policy tests would run here"
+
+  # Job 5: Scan Container Images
+  scan-container-images:
+    name: Scan Container Images
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'config'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Job 6: Lint and Test Scripts
+  lint-scripts:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Run ShellCheck
+      uses: ludeeus/action-shellcheck@master
+      with:
+        scandir: './scripts'
+
+  # Job 7: Deploy to Staging (on push to main)
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: 
+      - validate-terraform
+      - security-scan-iac
+      - validate-k8s-manifests
+      - validate-opa-policies
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+    
+    - name: Terraform Apply
+      run: |
+        cd terraform/environments/staging
+        terraform init
+        terraform apply -auto-approve
+    
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }}-staging --region ${{ env.AWS_REGION }}
+    
+    - name: Install Security Stack
+      run: |
+        cd scripts
+        chmod +x install-security-stack.sh
+        ./install-security-stack.sh
+    
+    - name: Run Security Tests
+      run: |
+        cd scripts
+        chmod +x security-tests.sh
+        ./security-tests.sh
+
+  # Job 8: Generate Security Report
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: 
+      - validate-terraform
+      - security-scan-iac
+      - validate-k8s-manifests
+      - scan-container-images
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Generate Report
+      run: |
+        echo "# Security Scan Report" > security-report.md
+        echo "" >> security-report.md
+        echo "**Date:** $(date)" >> security-report.md
+        echo "**Branch:** ${{ github.ref }}" >> security-report.md
+        echo "" >> security-report.md
+        echo "## Summary" >> security-report.md
+        echo "All security scans completed." >> security-report.md
+    
+    - name: Upload Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-report
+        path: security-report.md

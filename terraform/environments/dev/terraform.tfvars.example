@@ -1,0 +1,70 @@
+# Example terraform.tfvars file
+# Copy this file to terraform.tfvars and customize for your environment
+
+# AWS Configuration
+aws_region = "us-east-1"
+environment = "dev"
+owner = "your-team"
+
+# EKS Cluster Configuration
+cluster_name = "security-hardened-cluster"
+kubernetes_version = "1.28"
+
+# Network Configuration
+vpc_cidr = "10.0.0.0/16"
+
+# IMPORTANT: Restrict this to your IP for security
+# Find your IP: curl ifconfig.me
+allowed_cidr_blocks = ["0.0.0.0/0"]  # Change this!
+
+# Node Groups Configuration
+node_groups = {
+  general = {
+    desired_size   = 2
+    min_size       = 1
+    max_size       = 4
+    instance_types = ["t3.medium"]
+    capacity_type  = "ON_DEMAND"
+    disk_size      = 50
+    labels = {
+      role = "general"
+      environment = "dev"
+    }
+    taints = []
+  }
+  
+  # Uncomment to add spot instances for cost savings
+  # spot = {
+  #   desired_size   = 2
+  #   min_size       = 0
+  #   max_size       = 10
+  #   instance_types = ["t3.medium", "t3a.medium"]
+  #   capacity_type  = "SPOT"
+  #   disk_size      = 50
+  #   labels = {
+  #     role = "spot"
+  #   }
+  #   taints = [
+  #     {
+  #       key    = "spot"
+  #       value  = "true"
+  #       effect = "NoSchedule"
+  #     }
+  #   ]
+  # }
+}
+
+# Security Components
+enable_opa_gatekeeper = true
+enable_falco = true
+enable_prometheus = true
+enable_grafana = true
+
+# Custom Falco rules (optional)
+falco_rules_file = "../../falco/rules/custom-rules.yaml"
+
+# Additional Tags
+tags = {
+  CostCenter = "engineering"
+  Team       = "platform"
+}

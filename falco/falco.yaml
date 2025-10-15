@@ -1,0 +1,90 @@
+# Falco configuration for Kubernetes security monitoring
+
+# Base configuration
+json_output: true
+json_include_output_property: true
+log_stderr: true
+log_syslog: false
+log_level: info
+priority: warning
+
+# File output
+file_output:
+  enabled: true
+  keep_alive: false
+  filename: /var/log/falco/events.txt
+
+# Stdout output
+stdout_output:
+  enabled: true
+
+# Syslog output
+syslog_output:
+  enabled: false
+
+# HTTP output (for forwarding to SIEM or monitoring systems)
+http_output:
+  enabled: false
+  url: "http://falco-exporter:9376/events"
+
+# gRPC API configuration
+grpc:
+  enabled: true
+  bind_address: "0.0.0.0:5060"
+  threadiness: 8
+
+grpc_output:
+  enabled: true
+
+# Webserver for health checks
+webserver:
+  enabled: true
+  listen_port: 8765
+  k8s_healthz_endpoint: /healthz
+  ssl_enabled: false
+
+# Rules configuration
+rules_file:
+  - /etc/falco/falco_rules.yaml
+  - /etc/falco/falco_rules.local.yaml
+  - /etc/falco/k8s_audit_rules.yaml
+  - /etc/falco/rules.d
+  - /etc/falco/custom-rules.yaml
+
+# Load plugins
+plugins:
+  - name: k8saudit
+    library_path: libk8saudit.so
+    init_config: ""
+    open_params: "http://:9765/k8s-audit"
+  - name: json
+    library_path: libjson.so
+    init_config: ""
+
+# Watch configuration files for changes
+watch_config_files: true
+
+# Buffered outputs
+buffered_outputs: true
+
+# Syscall event drops
+syscall_event_drops:
+  threshold: 0.1
+  actions:
+    - log
+    - alert
+
+# Syscall event timeouts
+syscall_event_timeouts:
+  max_consecutives: 1000
+
+# Output rate limiting
+outputs:
+  rate: 1
+  max_burst: 1000
+
+# Metadata downloads
+metadata_download:
+  max_mb: 100
+  chunk_wait_us: 1000
+  watch_freq_sec: 1

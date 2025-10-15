@@ -1,0 +1,161 @@
+# Custom Falco Rules for Kubernetes Security
+# Extends default Falco rules with custom detection patterns
+
+- rule: Unauthorized Process in Container
+  desc: Detect processes running in containers that shouldn't be there
+  condition: >
+    spawned_process and 
+    container and 
+    not proc.name in (node, java, python, nginx, apache2, httpd)
+  output: >
+    Unauthorized process started in container 
+    (user=%user.name command=%proc.cmdline container=%container.name 
+    image=%container.image.repository:%container.image.tag)
+  priority: WARNING
+  tags: [container, process, security]
+
+- rule: Container Drift Detected
+  desc: Detect file modifications in running containers (container drift)
+  condition: >
+    container and 
+    not container.image.repository in (allowed_images) and
+    (open_write or rename or remove) and
+    container.mount.dest[/proc*] != "" and
+    fd.name != ""
+  output: >
+    File modified in container, possible drift detected
+    (user=%user.name command=%proc.cmdline file=%fd.name 
+    container=%container.name image=%container.image.repository)
+  priority: WARNING
+  tags: [container, filesystem, drift]
+
+- rule: Suspicious Network Activity from Container
+  desc: Detect unexpected network connections from containers
+  condition: >
+    outbound and
+    container and
+    not fd.sip in (allowed_outbound_ips) and
+    not fd.sport in (80, 443, 8080, 8443)
+  output: >
+    Suspicious outbound connection from container
+    (user=%user.name connection=%fd.name container=%container.name 
+    image=%container.image.repository dest_ip=%fd.sip dest_port=%fd.sport)
+  priority: WARNING
+  tags: [network, container, security]
+
+- rule: Privilege Escalation Attempt
+  desc: Detect attempts to escalate privileges
+  condition: >
+    spawned_process and
+    container and
+    (proc.name in (sudo, su) or
+     proc.cmdline contains "chmod +s" or
+     proc.cmdline contains "setuid")
+  output: >
+    Privilege escalation attempt detected
+    (user=%user.name command=%proc.cmdline container=%container.name 
+    image=%container.image.repository)
+  priority: CRITICAL
+  tags: [privilege_escalation, container, security]
+
+- rule: Sensitive File Access
+  desc: Detect access to sensitive files in containers
+  condition: >
+    open_read and
+    container and
+    (fd.name contains "/etc/shadow" or
+     fd.name contains "/etc/sudoers" or
+     fd.name contains "/.ssh/" or
+     fd.name contains "/root/.aws/credentials")
+  output: >
+    Sensitive file accessed in container
+    (user=%user.name file=%fd.name container=%container.name 
+    image=%container.image.repository command=%proc.cmdline)
+  priority: WARNING
+  tags: [filesystem, container, security, sensitive_data]
+
+- rule: Container Shell Spawned
+  desc: Detect shell spawned inside a container
+  condition: >
+    spawned_process and
+    container and
+    proc.name in (bash, sh, zsh, ash, csh, tcsh, ksh) and
+    not proc.pname in (docker, containerd, runc, kubectl)
+  output: >
+    Shell spawned in container
+    (user=%user.name shell=%proc.name parent=%proc.pname 
+    container=%container.name image=%container.image.repository)
+  priority: WARNING
+  tags: [container, shell, security]
+
+- rule: Kubernetes Secret Access
+  desc: Detect unauthorized access to Kubernetes secrets
+  condition: >
+    open_read and
+    container and
+    fd.name contains "/var/run/secrets/kubernetes.io" and
+    not proc.name in (allowed_secret_readers)
+  output: >
+    Kubernetes secret accessed by suspicious process
+    (user=%user.name process=%proc.name file=%fd.name 
+    container=%container.name image=%container.image.repository)
+  priority: WARNING
+  tags: [kubernetes, secrets, security]
+
+- rule: Package Management in Container
+  desc: Detect package managers running in production containers
+  condition: >
+    spawned_process and
+    container and
+    proc.name in (apt, apt-get, yum, dnf, apk, pip, npm, gem) and
+    container.image.tag != "latest"
+  output: >
+    Package manager executed in container
+    (user=%user.name command=%proc.cmdline container=%container.name 
+    image=%container.image.repository:%container.image.tag)
+  priority: WARNING
+  tags: [container, package_management, security]
+
+- rule: Crypto Mining Activity
+  desc: Detect potential crypto mining activity
+  condition: >
+    spawned_process and
+    container and
+    (proc.name in (xmrig, minerd, cpuminer) or
+     proc.cmdline contains "stratum+tcp" or
+     proc.cmdline contains "cryptonight")
+  output: >
+    Potential crypto mining detected
+    (user=%user.name command=%proc.cmdline container=%container.name 
+    image=%container.image.repository)
+  priority: CRITICAL
+  tags: [container, cryptomining, security]
+
+- rule: Container Debugging Tool Detected
+  desc: Detect debugging tools in production containers
+  condition: >
+    spawned_process and
+    container and
+    proc.name in (strace, gdb, tcpdump, nmap, nc, netcat) and
+    container.image.tag != "debug"
+  output: >
+    Debugging tool executed in production container
+    (user=%user.name tool=%proc.name command=%proc.cmdline 
+    container=%container.name image=%container.image.repository)
+  priority: WARNING
+  tags: [container, debugging, security]
+
+# Lists for rule conditions
+- list: allowed_images
+  items: []
+
+- list: allowed_outbound_ips
+  items: 
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+
+- list: allowed_secret_readers
+  items:
+    - kubelet
+    - kube-proxy

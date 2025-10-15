@@ -1,0 +1,64 @@
+# Secure Pod Security Policy (PSP) - Restricted Profile
+# This is the most restrictive policy following Pod Security Standards
+
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: restricted
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: 'runtime/default'
+    apparmor.security.beta.kubernetes.io/allowedProfileNames: 'runtime/default'
+    seccomp.security.alpha.kubernetes.io/defaultProfileName:  'runtime/default'
+    apparmor.security.beta.kubernetes.io/defaultProfileName:  'runtime/default'
+spec:
+  # Prevent privilege escalation
+  allowPrivilegeEscalation: false
+  
+  # Require dropping all capabilities
+  requiredDropCapabilities:
+    - ALL
+  
+  # Allow only specific volumes
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  
+  # Prevent host network access
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  
+  # Run as non-root user
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  
+  # Require non-root groups
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  
+  # Filesystem restrictions
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  
+  # Prevent privileged containers
+  privileged: false
+  
+  # Read-only root filesystem
+  readOnlyRootFilesystem: true
+  
+  # SELinux
+  seLinux:
+    rule: 'RunAsAny'
+  
+  # Prevent host path mounts
+  allowedHostPaths: []

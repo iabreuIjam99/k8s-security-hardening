@@ -1,0 +1,29 @@
+{
+  "name": "k8s-security-hardening",
+  "version": "1.0.0",
+  "description": "Kubernetes Security Hardening with OPA, Falco, and Terraform",
+  "scripts": {
+    "validate": "cd scripts && ./validate-policies.sh",
+    "test": "cd scripts && ./security-tests.sh",
+    "install": "cd scripts && ./install-security-stack.sh",
+    "lint:terraform": "terraform fmt -check -recursive terraform/",
+    "lint:shell": "shellcheck scripts/*.sh"
+  },
+  "keywords": [
+    "kubernetes",
+    "security",
+    "devsecops",
+    "opa",
+    "falco",
+    "terraform",
+    "aws",
+    "eks"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iabreuIjam99/k8s-security-hardening.git"
+  }
+}
