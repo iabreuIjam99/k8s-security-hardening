@@ -45,10 +45,10 @@ check_component() {
     local selector="$3"
     
     if kubectl get pods -n "$namespace" -l "$selector" --no-headers 2>/dev/null | grep -q "Running"; then
-        echo "✅ $component: Running" >> "$REPORT_FILE"
+        echo " $component: Running" >> "$REPORT_FILE"
         return 0
     else
-        echo "❌ $component: Not Running" >> "$REPORT_FILE"
+        echo " $component: Not Running" >> "$REPORT_FILE"
         return 1
     fi
 }
@@ -103,13 +103,13 @@ echo -e "${YELLOW}Checking for violations...${NC}"
 VIOLATIONS=$(kubectl get constraints -o json 2>/dev/null | jq -r '.items[].status.violations[]? | "\(.kind)/\(.name) in \(.namespace // "cluster-wide")"' 2>/dev/null | wc -l)
 
 if [ "$VIOLATIONS" -gt 0 ]; then
-    echo "⚠️ **Found $VIOLATIONS policy violations**" >> "$REPORT_FILE"
+    echo "**Found $VIOLATIONS policy violations**" >> "$REPORT_FILE"
     echo "" >> "$REPORT_FILE"
     echo '```' >> "$REPORT_FILE"
     kubectl get constraints -o json 2>/dev/null | jq -r '.items[] | select(.status.violations != null) | "Constraint: \(.metadata.name)\nViolations:\n\(.status.violations | map("  - \(.kind)/\(.name) in \(.namespace // "cluster")") | join("\n"))"' >> "$REPORT_FILE"
     echo '```' >> "$REPORT_FILE"
 else
-    echo "✅ **No policy violations found**" >> "$REPORT_FILE"
+    echo " **No policy violations found**" >> "$REPORT_FILE"
 fi
 
 # Falco Alerts
@@ -128,7 +128,7 @@ if kubectl get pods -n falco -l app.kubernetes.io/name=falco --no-headers 2>/dev
         echo '```' >> "$REPORT_FILE"
     fi
 else
-    echo "⚠️ Falco is not running" >> "$REPORT_FILE"
+    echo " Falco is not running" >> "$REPORT_FILE"
 fi
 
 # Network Policies
@@ -190,23 +190,23 @@ Based on the analysis:
 EOF
 
 if [ "$VIOLATIONS" -gt 0 ]; then
-    echo "- ⚠️ **High Priority:** Fix $VIOLATIONS policy violations" >> "$REPORT_FILE"
+    echo "-  **High Priority:** Fix $VIOLATIONS policy violations" >> "$REPORT_FILE"
 fi
 
 if [ "$ROOT_PODS" -gt 0 ]; then
-    echo "- ⚠️ **Medium Priority:** $ROOT_PODS pods running as root - configure runAsNonRoot" >> "$REPORT_FILE"
+    echo "-  **Medium Priority:** $ROOT_PODS pods running as root - configure runAsNonRoot" >> "$REPORT_FILE"
 fi
 
 if [ "$PRIV_PODS" -gt 0 ]; then
-    echo "- 🔴 **Critical:** $PRIV_PODS privileged containers detected - remove privileged flag" >> "$REPORT_FILE"
+    echo "- **Critical:** $PRIV_PODS privileged containers detected - remove privileged flag" >> "$REPORT_FILE"
 fi
 
 if [ "$NO_LIMITS" -gt 0 ]; then
-    echo "- ⚠️ **Medium Priority:** $NO_LIMITS pods without resource limits" >> "$REPORT_FILE"
+    echo "-  **Medium Priority:** $NO_LIMITS pods without resource limits" >> "$REPORT_FILE"
 fi
 
 if [ "$NETPOL_COUNT" -eq 0 ]; then
-    echo "- ⚠️ **High Priority:** No network policies found - implement network segmentation" >> "$REPORT_FILE"
+    echo "-  **High Priority:** No network policies found - implement network segmentation" >> "$REPORT_FILE"
 fi
 
 # Compliance Status
@@ -215,12 +215,12 @@ add_section "Compliance Status"
 cat >> "$REPORT_FILE" << EOF
 | Control | Status | Notes |
 |---------|--------|-------|
-| Admission Control | $([ "$CONSTRAINT_COUNT" -gt 0 ] && echo "✅ Pass" || echo "❌ Fail") | $CONSTRAINT_COUNT policies active |
-| Runtime Security | $(kubectl get pods -n falco --no-headers 2>/dev/null | grep -q "Running" && echo "✅ Pass" || echo "❌ Fail") | Falco monitoring |
-| Network Policies | $([ "$NETPOL_COUNT" -gt 0 ] && echo "✅ Pass" || echo "⚠️ Warn") | $NETPOL_COUNT policies |
-| Non-root Containers | $([ "$ROOT_PODS" -eq 0 ] && echo "✅ Pass" || echo "⚠️ Warn") | $ROOT_PODS violations |
-| Resource Limits | $([ "$NO_LIMITS" -eq 0 ] && echo "✅ Pass" || echo "⚠️ Warn") | $NO_LIMITS violations |
-| Privileged Containers | $([ "$PRIV_PODS" -eq 0 ] && echo "✅ Pass" || echo "❌ Fail") | $PRIV_PODS detected |
+| Admission Control | $([ "$CONSTRAINT_COUNT" -gt 0 ] && echo " Pass" || echo " Fail") | $CONSTRAINT_COUNT policies active |
+| Runtime Security | $(kubectl get pods -n falco --no-headers 2>/dev/null | grep -q "Running" && echo " Pass" || echo " Fail") | Falco monitoring |
+| Network Policies | $([ "$NETPOL_COUNT" -gt 0 ] && echo " Pass" || echo " Warn") | $NETPOL_COUNT policies |
+| Non-root Containers | $([ "$ROOT_PODS" -eq 0 ] && echo " Pass" || echo " Warn") | $ROOT_PODS violations |
+| Resource Limits | $([ "$NO_LIMITS" -eq 0 ] && echo " Pass" || echo " Warn") | $NO_LIMITS violations |
+| Privileged Containers | $([ "$PRIV_PODS" -eq 0 ] && echo " Pass" || echo " Fail") | $PRIV_PODS detected |
 EOF
 
 # Footer
@@ -265,9 +265,9 @@ echo ""
 
 # Return exit code based on critical issues
 if [ "$PRIV_PODS" -gt 0 ] || [ "$VIOLATIONS" -gt 5 ]; then
-    echo -e "${RED}⚠️  Critical issues found! Please review the report.${NC}"
+    echo -e "${RED} Critical issues found! Please review the report.${NC}"
     exit 1
 else
-    echo -e "${GREEN}✅ No critical issues found.${NC}"
+    echo -e "${GREEN} No critical issues found.${NC}"
     exit 0
 fi
